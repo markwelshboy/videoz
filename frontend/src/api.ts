@@ -1,11 +1,22 @@
-import type { CropRect, ExportBundleResult, ExportResult, MediaAsset, MediaKind, TrainingProfile } from './types'
+import type {
+  CropRect,
+  ExportBundleResult,
+  ExportResult,
+  MediaAsset,
+  MediaKind,
+  Project,
+  ProjectWorkspace,
+  SavedSelection,
+  SelectionInput,
+  TrainingProfile,
+} from './types'
 
 const EXPORT_SESSION_KEY = 'videoz.export-session'
 export const EXPORT_SESSION_EVENT = 'videoz:exports-changed'
 
 export interface ExportSessionState {
-  sourceId: string
-  sourceName: string
+  projectId: string
+  projectName: string
   filenames: string[]
 }
 
@@ -23,7 +34,7 @@ export function getExportSession(): ExportSessionState | null {
     const raw = window.sessionStorage.getItem(EXPORT_SESSION_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as ExportSessionState
-    if (!parsed.sourceId || !Array.isArray(parsed.filenames)) return null
+    if (!parsed.projectId || !Array.isArray(parsed.filenames)) return null
     return parsed
   } catch {
     return null
@@ -35,15 +46,20 @@ function publishExportSession(state: ExportSessionState) {
   window.dispatchEvent(new CustomEvent<ExportSessionState>(EXPORT_SESSION_EVENT, { detail: state }))
 }
 
-function resetExportSession(asset: MediaAsset) {
-  publishExportSession({ sourceId: asset.id, sourceName: asset.original_name, filenames: [] })
+export function syncExportSession(project: Project, filenames: string[]) {
+  publishExportSession({
+    projectId: project.id,
+    projectName: project.name,
+    filenames: [...new Set(filenames.filter(Boolean))],
+  })
 }
 
-function rememberExport(asset: MediaAsset, result: ExportResult) {
+function rememberProjectExport(project: Project, result: ExportResult) {
   const current = getExportSession()
-  const state: ExportSessionState = current?.sourceId === asset.id
+  const state: ExportSessionState = current?.projectId === project.id
     ? current
-    : { sourceId: asset.id, sourceName: asset.original_name, filenames: [] }
+    : { projectId: project.id, projectName: project.name, filenames: [] }
+  state.projectName = project.name
   if (!state.filenames.includes(result.filename)) state.filenames.push(result.filename)
   publishExportSession(state)
 }
@@ -54,14 +70,85 @@ export async function fetchProfiles(): Promise<TrainingProfile[]> {
   return response.json()
 }
 
+export async function fetchProjects(): Promise<Project[]> {
+  const response = await fetch('/api/projects')
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function createProject(name: string, datasetPrefix?: string): Promise<Project> {
+  const response = await fetch('/api/projects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, dataset_prefix: datasetPrefix || null }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function updateProject(projectId: string, input: { name?: string; dataset_prefix?: string }): Promise<Project> {
+  const response = await fetch(`/api/projects/${projectId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function fetchProjectWorkspace(projectId: string): Promise<ProjectWorkspace> {
+  const response = await fetch(`/api/projects/${projectId}`)
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function importProjectMedia(projectId: string, file: File): Promise<MediaAsset> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await fetch(`/api/projects/${projectId}/media/import`, { method: 'POST', body: form })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
 export async function importMedia(file: File): Promise<MediaAsset> {
   const form = new FormData()
   form.append('file', file)
   const response = await fetch('/api/media/import', { method: 'POST', body: form })
   if (!response.ok) throw new Error(await readError(response))
-  const asset = await response.json() as MediaAsset
-  resetExportSession(asset)
-  return asset
+  return response.json()
+}
+
+export async function createSavedSelection(projectId: string, input: SelectionInput): Promise<SavedSelection> {
+  const response = await fetch(`/api/projects/${projectId}/selections`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function updateSavedSelection(selectionId: string, input: SelectionInput): Promise<SavedSelection> {
+  const response = await fetch(`/api/selections/${selectionId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function deleteSavedSelection(selectionId: string): Promise<void> {
+  const response = await fetch(`/api/selections/${selectionId}`, { method: 'DELETE' })
+  if (!response.ok) throw new Error(await readError(response))
+}
+
+export async function exportSavedSelection(project: Project, selectionId: string): Promise<ExportResult> {
+  const response = await fetch(`/api/selections/${selectionId}/export`, { method: 'POST' })
+  if (!response.ok) throw new Error(await readError(response))
+  const result = await response.json() as ExportResult
+  rememberProjectExport(project, result)
+  return result
 }
 
 export async function createExport(input: {
@@ -92,9 +179,7 @@ export async function createExport(input: {
     }),
   })
   if (!response.ok) throw new Error(await readError(response))
-  const result = await response.json() as ExportResult
-  rememberExport(input.asset, result)
-  return result
+  return response.json()
 }
 
 export async function createExportBundle(filenames: string[], name?: string): Promise<ExportBundleResult> {
