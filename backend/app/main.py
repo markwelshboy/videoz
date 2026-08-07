@@ -3,10 +3,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .archive import create_export_bundle
 from .config import get_settings
 from .ffmpeg import export_selection
 from .media import import_media
-from .models import ExportRequest, ExportResult, MediaAsset, TrainingProfile
+from .models import (
+    ExportBundleRequest,
+    ExportBundleResult,
+    ExportRequest,
+    ExportResult,
+    MediaAsset,
+    TrainingProfile,
+)
 from .profiles import PROFILES
 
 settings = get_settings()
@@ -42,6 +50,11 @@ def upload_media(file: UploadFile = File(...)) -> MediaAsset:
 @app.post("/api/exports", response_model=ExportResult)
 def create_export(request: ExportRequest) -> ExportResult:
     return export_selection(request, settings)
+
+
+@app.post("/api/exports/bundle", response_model=ExportBundleResult)
+def create_bundle(request: ExportBundleRequest) -> ExportBundleResult:
+    return create_export_bundle(request, settings)
 
 
 frontend_dir = settings.frontend_dir
