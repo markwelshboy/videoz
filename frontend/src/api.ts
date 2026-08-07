@@ -1,4 +1,14 @@
 import type {
+  CaptionAsset,
+  CaptionFrame,
+  CaptionGenerationResult,
+  CaptionJob,
+  CaptionProjectSettings,
+  CaptionProviderInfo,
+  CaptionRecipe,
+  CaptionRecipeInput,
+  CaptionStatus,
+  CaptionWorkspaceData,
   CropRect,
   ExportBundleResult,
   ExportResult,
@@ -187,6 +197,105 @@ export async function createExportBundle(filenames: string[], name?: string): Pr
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filenames, name }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function fetchCaptionProviders(): Promise<CaptionProviderInfo[]> {
+  const response = await fetch('/api/caption/providers')
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function fetchCaptionWorkspace(projectId: string): Promise<CaptionWorkspaceData> {
+  const response = await fetch(`/api/projects/${projectId}/caption`)
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function updateCaptionSettings(projectId: string, triggerPhrase: string): Promise<CaptionProjectSettings> {
+  const response = await fetch(`/api/projects/${projectId}/caption/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trigger_phrase: triggerPhrase }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function importCaptionVideo(projectId: string, file: File): Promise<CaptionAsset> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await fetch(`/api/projects/${projectId}/caption/import`, { method: 'POST', body: form })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function patchCaptionAsset(
+  assetKey: string,
+  input: { caption_body?: string; status?: CaptionStatus; selected?: boolean; frame_times?: number[] },
+): Promise<CaptionAsset> {
+  const response = await fetch(`/api/caption/assets/${encodeURIComponent(assetKey)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function fetchCaptionFrames(assetKey: string, input: { count?: number; times?: number[] }): Promise<CaptionFrame[]> {
+  const response = await fetch(`/api/caption/assets/${encodeURIComponent(assetKey)}/frames`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ count: input.count ?? input.times?.length ?? 8, times: input.times ?? null }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function createCaptionRecipe(input: CaptionRecipeInput): Promise<CaptionRecipe> {
+  const response = await fetch('/api/caption/recipes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function updateCaptionRecipe(recipeId: string, input: CaptionRecipeInput): Promise<CaptionRecipe> {
+  const response = await fetch(`/api/caption/recipes/${recipeId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function generateCaptions(projectId: string, assetKeys: string[], recipeId: string): Promise<CaptionGenerationResult> {
+  const response = await fetch('/api/caption/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId, asset_keys: assetKeys, recipe_id: recipeId }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function fetchCaptionJob(jobId: string): Promise<CaptionJob> {
+  const response = await fetch(`/api/caption/jobs/${jobId}`)
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function createCaptionDatasetBundle(projectId: string, assetKeys: string[]): Promise<ExportBundleResult> {
+  const response = await fetch(`/api/projects/${projectId}/caption/bundle`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ asset_keys: assetKeys }),
   })
   if (!response.ok) throw new Error(await readError(response))
   return response.json()
