@@ -14,6 +14,7 @@ export interface TrainingProfile {
   media_kind: MediaKind
   fps: number
   frame_options: number[]
+  default_frames?: number
   sizes: OutputSize[]
   dimension_multiple: number
   frame_rule?: string
@@ -31,6 +32,7 @@ export interface MediaAsset {
   fps: number
   frame_count?: number
   has_audio: boolean
+  thumbnails: string[]
 }
 
 export interface CropRect {

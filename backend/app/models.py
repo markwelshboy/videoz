@@ -17,10 +17,17 @@ class TrainingProfile(BaseModel):
     media_kind: Literal["video", "image"]
     fps: float = Field(gt=0)
     frame_options: list[int]
+    default_frames: int | None = Field(default=None, gt=0)
     sizes: list[OutputSize]
     dimension_multiple: int = Field(default=1, gt=0)
     frame_rule: str | None = None
     notes: str | None = None
+
+    @model_validator(mode="after")
+    def default_frame_count_is_selectable(self) -> "TrainingProfile":
+        if self.default_frames is not None and self.default_frames not in self.frame_options:
+            raise ValueError("default_frames must be present in frame_options")
+        return self
 
 
 class MediaAsset(BaseModel):
@@ -34,6 +41,7 @@ class MediaAsset(BaseModel):
     fps: float = Field(gt=0)
     frame_count: int | None = None
     has_audio: bool = False
+    thumbnails: list[str] = Field(default_factory=list)
 
 
 class CropRect(BaseModel):

@@ -9,7 +9,8 @@ PROFILES = [
         label="MiniMax H3 / DiffSynth FL2VA",
         media_kind="video",
         fps=24,
-        frame_options=[124, 175, 243, 362],
+        frame_options=[73, 90, 107, 124, 175, 243, 362],
+        default_frames=124,
         dimension_multiple=32,
         frame_rule="17n + 5",
         sizes=[
@@ -29,6 +30,7 @@ PROFILES = [
         media_kind="video",
         fps=16,
         frame_options=[81, 121],
+        default_frames=81,
         dimension_multiple=16,
         sizes=[
             OutputSize(width=832, height=480, label="16:9 · 832×480"),
@@ -47,6 +49,7 @@ PROFILES = [
         media_kind="image",
         fps=1,
         frame_options=[1],
+        default_frames=1,
         dimension_multiple=64,
         sizes=[
             OutputSize(width=1024, height=1024, label="1:1 · 1024×1024"),
