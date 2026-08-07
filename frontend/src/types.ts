@@ -23,6 +23,7 @@ export interface TrainingProfile {
 
 export interface MediaAsset {
   id: string
+  project_id?: string
   original_name: string
   stored_name: string
   url: string
@@ -46,4 +47,50 @@ export interface ExportResult {
   filename: string
   url: string
   command: string[]
+}
+
+export interface ExportBundleResult {
+  filename: string
+  url: string
+  files: string[]
+}
+
+export interface Project {
+  id: string
+  name: string
+  dataset_prefix: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SavedSelection {
+  id: string
+  project_id: string
+  asset_id: string
+  sequence: number
+  start_time: number
+  frame_count: number
+  profile_id: string
+  size_index: number
+  crop: CropRect
+  crop_scale: number
+  export_filename?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ProjectWorkspace {
+  project: Project
+  sources: MediaAsset[]
+  selections: SavedSelection[]
+}
+
+export interface SelectionInput {
+  asset_id: string
+  start_time: number
+  frame_count: number
+  profile_id: string
+  size_index: number
+  crop: CropRect
+  crop_scale: number
 }

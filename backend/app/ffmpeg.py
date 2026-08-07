@@ -1,3 +1,4 @@
+import re
 import subprocess
 import uuid
 from pathlib import Path
@@ -17,6 +18,11 @@ def _crop_filter(request: ExportRequest) -> str:
         f"'floor(ih*{crop.y:.8f}/2)*2',"
         f"scale={request.output_width}:{request.output_height}:flags=lanczos,setsar=1"
     )
+
+
+def _safe_component(value: str, fallback: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._-")
+    return cleaned[:100] or fallback
 
 
 def build_export_command(
@@ -70,16 +76,45 @@ def build_export_command(
     ]
 
 
-def export_selection(request: ExportRequest, settings: Settings) -> ExportResult:
+def export_selection(
+    request: ExportRequest,
+    settings: Settings,
+    *,
+    filename_stem: str | None = None,
+    output_subdir: str | None = None,
+) -> ExportResult:
     source_path = (settings.sources_dir / request.source_filename).resolve()
     sources_root = settings.sources_dir.resolve()
     if source_path.parent != sources_root or not source_path.is_file():
         raise HTTPException(status_code=404, detail="Source media was not found")
 
     extension = ".png" if request.media_kind == "image" else ".mp4"
-    safe_stem = Path(request.original_name).stem.replace(" ", "_")[:80] or "clip"
-    filename = f"{safe_stem}_{uuid.uuid4().hex[:8]}{extension}"
-    output_path = settings.datasets_dir / filename
+    if filename_stem:
+        safe_stem = _safe_component(filename_stem, "clip")
+    else:
+        source_stem = _safe_component(Path(request.original_name).stem, "clip")
+        safe_stem = f"{source_stem}_{uuid.uuid4().hex[:8]}"
+
+    output_dir = settings.datasets_dir
+    relative_dir = Path()
+    if output_subdir:
+        safe_subdir = _safe_component(output_subdir, "dataset")
+        output_dir = settings.datasets_dir / safe_subdir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        relative_dir = Path(safe_subdir)
+
+    filename = f"{safe_stem}{extension}"
+    output_path = output_dir / filename
+
+    # A persistent selection keeps one deterministic stem. If its media kind
+    # changes, remove stale alternate output types rather than leaving ghosts.
+    if filename_stem:
+        for alternate in (output_dir / f"{safe_stem}.mp4", output_dir / f"{safe_stem}.png"):
+            if alternate != output_path:
+                alternate.unlink(missing_ok=True)
+                alternate.with_suffix(".json").unlink(missing_ok=True)
+                alternate.with_suffix(".txt").unlink(missing_ok=True)
+
     command = build_export_command(request, source_path, output_path, settings)
 
     try:
@@ -94,8 +129,9 @@ def export_selection(request: ExportRequest, settings: Settings) -> ExportResult
     sidecar = output_path.with_suffix(".json")
     sidecar.write_text(request.model_dump_json(indent=2), encoding="utf-8")
 
+    relative_path = (relative_dir / filename).as_posix()
     return ExportResult(
-        filename=filename,
-        url=f"/files/datasets/{filename}",
+        filename=relative_path,
+        url=f"/files/datasets/{relative_path}",
         command=command,
     )

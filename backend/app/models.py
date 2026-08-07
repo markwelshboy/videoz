@@ -32,6 +32,7 @@ class TrainingProfile(BaseModel):
 
 class MediaAsset(BaseModel):
     id: str
+    project_id: str | None = None
     original_name: str
     stored_name: str
     url: str
@@ -74,3 +75,74 @@ class ExportResult(BaseModel):
     filename: str
     url: str
     command: list[str]
+
+
+class ExportBundleRequest(BaseModel):
+    filenames: list[str] = Field(min_length=1)
+    name: str | None = None
+
+
+class ExportBundleResult(BaseModel):
+    filename: str
+    url: str
+    files: list[str]
+
+
+class ProjectCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    dataset_prefix: str | None = Field(default=None, max_length=80)
+
+
+class ProjectUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    dataset_prefix: str | None = Field(default=None, min_length=1, max_length=80)
+
+
+class Project(BaseModel):
+    id: str
+    name: str
+    dataset_prefix: str
+    created_at: str
+    updated_at: str
+
+
+class SelectionCreate(BaseModel):
+    asset_id: str
+    start_time: float = Field(ge=0)
+    frame_count: int = Field(gt=0)
+    profile_id: str
+    size_index: int = Field(ge=0)
+    crop: CropRect
+    crop_scale: float = Field(gt=0, le=1)
+
+
+class SelectionUpdate(BaseModel):
+    asset_id: str
+    start_time: float = Field(ge=0)
+    frame_count: int = Field(gt=0)
+    profile_id: str
+    size_index: int = Field(ge=0)
+    crop: CropRect
+    crop_scale: float = Field(gt=0, le=1)
+
+
+class SavedSelection(BaseModel):
+    id: str
+    project_id: str
+    asset_id: str
+    sequence: int = Field(gt=0)
+    start_time: float = Field(ge=0)
+    frame_count: int = Field(gt=0)
+    profile_id: str
+    size_index: int = Field(ge=0)
+    crop: CropRect
+    crop_scale: float = Field(gt=0, le=1)
+    export_filename: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class ProjectWorkspace(BaseModel):
+    project: Project
+    sources: list[MediaAsset]
+    selections: list[SavedSelection]

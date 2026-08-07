@@ -26,7 +26,12 @@ class Settings(BaseSettings):
     def thumbnails_dir(self) -> Path:
         return self.data_dir / "thumbnails"
 
+    @property
+    def database_path(self) -> Path:
+        return self.data_dir / "videoz.sqlite3"
+
     def ensure_directories(self) -> None:
+        self.data_dir.mkdir(parents=True, exist_ok=True)
         self.sources_dir.mkdir(parents=True, exist_ok=True)
         self.datasets_dir.mkdir(parents=True, exist_ok=True)
         self.thumbnails_dir.mkdir(parents=True, exist_ok=True)
