@@ -594,8 +594,6 @@ export default function App() {
       setWorkspace((current) => current
         ? { ...current, selections: [...current.selections, saved] }
         : current)
-      // New additions intentionally stay out of edit mode so the normal fast
-      // workflow remains: move the window/crop and add the next selection.
       setActiveSelectionId(null)
       setQueueNotice(`Saved selection #${saved.sequence}. Move on and add another, or load it later to edit.`)
     } catch (reason) {
@@ -794,7 +792,7 @@ export default function App() {
       {queueNotice && <div className="message neutral">{queueNotice}</div>}
 
       <section className="project-card">
-        {showProjectCreator || !project ? (
+        {showProjectCreator || !project || !workspace ? (
           <div className="project-create-row">
             <div className="project-create-copy">
               <span className="label">New project</span>
@@ -836,7 +834,13 @@ export default function App() {
               </div>
               <div className="project-field">
                 <label htmlFor="project-prefix">Dataset prefix</label>
-                <input id="project-prefix" value={projectPrefixDraft} onChange={(event) => setProjectPrefixDraft(event.target.value)} />
+                <input
+                  id="project-prefix"
+                  value={projectPrefixDraft}
+                  disabled={savedSelections.length > 0}
+                  title={savedSelections.length > 0 ? 'Dataset prefix is locked once selections have sequence numbers.' : undefined}
+                  onChange={(event) => setProjectPrefixDraft(event.target.value)}
+                />
               </div>
               <button type="button" className="queue-primary" disabled={busy || !projectSettingsDirty || !projectNameDraft.trim() || !projectPrefixDraft.trim()} onClick={() => void handleSaveProject()}>
                 Save project
