@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     ffprobe_bin: str = "ffprobe"
     max_upload_gb: int = Field(default=20, ge=1)
 
+    # Caption providers are deliberately OpenAI-compatible at the boundary so
+    # local Qwen/vLLM and hosted services can use the same job contract.
+    openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    vlm_base_url: str | None = None
+    vlm_api_key: str | None = None
+    vlm_default_model: str = "Qwen/Qwen3-VL-8B-Instruct"
+
     @property
     def sources_dir(self) -> Path:
         return self.data_dir / "sources"
@@ -27,6 +35,10 @@ class Settings(BaseSettings):
         return self.data_dir / "thumbnails"
 
     @property
+    def caption_frames_dir(self) -> Path:
+        return self.data_dir / "caption_frames"
+
+    @property
     def database_path(self) -> Path:
         return self.data_dir / "videoz.sqlite3"
 
@@ -35,6 +47,7 @@ class Settings(BaseSettings):
         self.sources_dir.mkdir(parents=True, exist_ok=True)
         self.datasets_dir.mkdir(parents=True, exist_ok=True)
         self.thumbnails_dir.mkdir(parents=True, exist_ok=True)
+        self.caption_frames_dir.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache

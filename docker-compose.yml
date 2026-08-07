@@ -5,6 +5,11 @@ services:
       - "8000:8000"
     environment:
       VIDEOZ_DATA_DIR: /data
+      VIDEOZ_OPENROUTER_API_KEY: ${VIDEOZ_OPENROUTER_API_KEY:-}
+      VIDEOZ_OPENROUTER_BASE_URL: ${VIDEOZ_OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      VIDEOZ_VLM_BASE_URL: ${VIDEOZ_VLM_BASE_URL:-}
+      VIDEOZ_VLM_API_KEY: ${VIDEOZ_VLM_API_KEY:-}
+      VIDEOZ_VLM_DEFAULT_MODEL: ${VIDEOZ_VLM_DEFAULT_MODEL:-Qwen/Qwen3-VL-8B-Instruct}
     volumes:
       - ./data:/data
     restart: unless-stopped
