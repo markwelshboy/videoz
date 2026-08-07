@@ -47,7 +47,7 @@ class MediaAsset(BaseModel):
 
 class CropRect(BaseModel):
     x: float = Field(ge=0, le=1)
-    y: float = Field(ge=0, le=1)
+    y: float = Field(gt=0, le=1)
     width: float = Field(gt=0, le=1)
     height: float = Field(gt=0, le=1)
 
@@ -194,6 +194,7 @@ class CaptionRecipe(CaptionRecipeCreate):
 class CaptionFrameRequest(BaseModel):
     count: int = Field(default=8, ge=1, le=64)
     times: list[float] | None = None
+    visual_detail: CaptionVisualDetail = "standard"
 
 
 class CaptionFrame(BaseModel):
