@@ -31,6 +31,7 @@ export interface MediaAsset {
   fps: number
   frame_count?: number
   has_audio: boolean
+  thumbnails: string[]
 }
 
 export interface CropRect {
