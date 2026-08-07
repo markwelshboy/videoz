@@ -47,7 +47,7 @@ class MediaAsset(BaseModel):
 
 class CropRect(BaseModel):
     x: float = Field(ge=0, le=1)
-    y: float = Field(gt=0, le=1)
+    y: float = Field(ge=0, le=1)
     width: float = Field(gt=0, le=1)
     height: float = Field(gt=0, le=1)
 
