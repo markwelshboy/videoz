@@ -49,7 +49,10 @@ def create_export_bundle(request: ExportBundleRequest, settings: Settings) -> Ex
     }
 
     try:
-        with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+        # Exported MP4/PNG files are already compressed. ZIP_STORED makes
+        # packaging effectively a fast container operation instead of wasting
+        # CPU trying to recompress media that will barely shrink.
+        with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_STORED) as archive:
             for path in included:
                 archive.write(path, arcname=path.name)
             archive.writestr("manifest.json", json.dumps(manifest, indent=2))
