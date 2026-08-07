@@ -1,6 +1,6 @@
 # Videoz
 
-Videoz is a model-aware visual editor for preparing image and video training datasets. The current vertical slice supports importing a source video, probing its metadata, selecting a trainer profile, positioning and resizing a fixed-aspect crop, moving a model-sized temporal window, scrubbing within it, and exporting through FFmpeg.
+Videoz is a model-aware visual editor for preparing image and video training datasets. The current vertical slice supports importing a source video, probing its metadata, selecting a trainer profile, positioning and resizing a fixed-aspect crop, moving a model-sized temporal window, previewing that exact selection, saving multiple clip decisions, and exporting through FFmpeg.
 
 ## Current capabilities
 
@@ -15,7 +15,11 @@ Videoz is a model-aware visual editor for preparing image and video training dat
 - Fixed-frame timeline window derived from target FPS and frame count.
 - FFmpeg-generated timeline preview filmstrip.
 - 1× through 16× timeline zoom with horizontal scrolling.
+- Selection-aware Play/Pause preview with optional looping at the exact capture boundaries.
 - Fast scrubbing inside the selected time range.
+- Session clip queue for saving multiple crops/time windows from one source.
+- Saved-selection markers on the source timeline.
+- Load, remove, individual export, and sequential batch export for queued clips.
 - FFmpeg export from the original source.
 - Docker image that builds the React UI and serves it from FastAPI.
 
@@ -32,6 +36,7 @@ The compose file stores source media and exports in `./data`:
 ```text
 data/
 ├── sources/
+├── thumbnails/
 └── datasets/
 ```
 
@@ -73,9 +78,10 @@ Interactive API documentation is available at `/docs`.
 
 ## Planned next steps
 
-1. Persist projects and multiple selections per source.
-2. Add asynchronous preprocessing/export jobs and progress reporting.
-3. Add direct filmstrip playhead scrubbing and selection-aware playback controls.
-4. Add scene-cut detection and dataset quality checks.
-5. Add cropped-clip captioning with Qwen3-VL.
-6. Add optional GPU upscaling and subject tracking.
+1. Persist projects and clip selections across browser/server sessions.
+2. Add direct drag-to-scrub interaction on the filmstrip.
+3. Add asynchronous preprocessing/export jobs and progress reporting.
+4. Separate model, task/checkpoint, trainer, and resolution-tier configuration.
+5. Add scene-cut detection and dataset quality checks.
+6. Add cropped-clip captioning with Qwen3-VL.
+7. Add optional GPU upscaling and subject tracking.
