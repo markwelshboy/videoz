@@ -8,6 +8,16 @@ const MIN_CROP_SCALE = 0.25
 
 type CropHandle = 'nw' | 'ne' | 'sw' | 'se'
 
+interface SavedSelection {
+  id: string
+  startTime: number
+  frameCount: number
+  profileId: string
+  sizeIndex: number
+  crop: CropRect
+  cropScale: number
+}
+
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds)) return '00:00.000'
   const mins = Math.floor(seconds / 60)
@@ -76,11 +86,18 @@ function closestSizeIndex(profile: TrainingProfile, asset: MediaAsset): number {
   return bestIndex
 }
 
+function newSelectionId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
   const timelineViewportRef = useRef<HTMLDivElement>(null)
+  const skipProfileResetRef = useRef(false)
+  const skipCropResetRef = useRef(false)
   const [profiles, setProfiles] = useState<TrainingProfile[]>([])
   const [profileId, setProfileId] = useState('')
   const [sizeIndex, setSizeIndex] = useState(0)
@@ -91,13 +108,18 @@ export default function App() {
   const [startTime, setStartTime] = useState(0)
   const [playhead, setPlayhead] = useState(0)
   const [timelineZoom, setTimelineZoom] = useState(1)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [loopSelection, setLoopSelection] = useState(true)
+  const [savedSelections, setSavedSelections] = useState<SavedSelection[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<ExportResult | null>(null)
+  const [queueNotice, setQueueNotice] = useState('')
 
   const profile = profiles.find((item) => item.id === profileId) ?? profiles[0]
   const outputSize = profile?.sizes[sizeIndex] ?? profile?.sizes[0]
   const selectionDuration = profile ? frameCount / profile.fps : 0
+  const selectionEnd = Math.min(asset?.duration ?? selectionDuration, startTime + selectionDuration)
   const maximumStart = Math.max(0, (asset?.duration ?? 0) - selectionDuration)
   const selectionWidth = asset?.duration ? Math.min(100, selectionDuration / asset.duration * 100) : 0
   const selectionLeft = asset?.duration ? startTime / asset.duration * 100 : 0
@@ -131,6 +153,11 @@ export default function App() {
 
   useEffect(() => {
     if (!profile) return
+    if (skipProfileResetRef.current) {
+      skipProfileResetRef.current = false
+      return
+    }
+    pausePlayback()
     setSizeIndex(asset ? closestSizeIndex(profile, asset) : 0)
     setFrameCount(defaultFrameCount(profile))
     setStartTime(0)
@@ -140,14 +167,18 @@ export default function App() {
 
   useEffect(() => {
     if (!asset || !outputSize) return
+    if (skipCropResetRef.current) {
+      skipCropResetRef.current = false
+      return
+    }
     setCropScale(1)
     setCrop(calculateCrop(asset, outputSize, 1))
   }, [asset?.id, outputSize?.width, outputSize?.height])
 
   useEffect(() => {
     if (startTime > maximumStart) setStartTime(maximumStart)
-    setPlayhead((current) => clamp(current, startTime, Math.min(asset?.duration ?? 0, startTime + selectionDuration)))
-  }, [maximumStart, selectionDuration, startTime, asset?.duration])
+    setPlayhead((current) => clamp(current, startTime, selectionEnd))
+  }, [maximumStart, selectionDuration, startTime, selectionEnd])
 
   useEffect(() => {
     if (!asset || !timelineViewportRef.current || !timelineRef.current) return
@@ -164,14 +195,47 @@ export default function App() {
     return () => window.cancelAnimationFrame(frame)
   }, [timelineZoom, asset?.id])
 
+  useEffect(() => {
+    if (!isPlaying || !asset) return
+    let animationFrame = 0
+
+    const tick = () => {
+      const video = videoRef.current
+      if (!video || video.paused) return
+
+      if (video.currentTime >= selectionEnd - 0.01) {
+        if (loopSelection) {
+          video.currentTime = startTime
+          setPlayhead(startTime)
+        } else {
+          video.pause()
+          video.currentTime = selectionEnd
+          setPlayhead(selectionEnd)
+          setIsPlaying(false)
+          return
+        }
+      } else {
+        setPlayhead(clamp(video.currentTime, startTime, selectionEnd))
+      }
+
+      animationFrame = window.requestAnimationFrame(tick)
+    }
+
+    animationFrame = window.requestAnimationFrame(tick)
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [isPlaying, loopSelection, startTime, selectionEnd, asset?.id])
+
   async function handleFile(file: File | undefined) {
     if (!file) return
+    pausePlayback()
     setBusy(true)
     setError('')
     setResult(null)
+    setQueueNotice('')
     try {
       const imported = await importMedia(file)
       setAsset(imported)
+      setSavedSelections([])
       if (profile) setSizeIndex(closestSizeIndex(profile, imported))
       setStartTime(0)
       setPlayhead(0)
@@ -183,8 +247,36 @@ export default function App() {
     }
   }
 
+  function pausePlayback() {
+    videoRef.current?.pause()
+    setIsPlaying(false)
+  }
+
+  async function togglePlayback() {
+    const video = videoRef.current
+    if (!asset || !video) return
+
+    if (!video.paused) {
+      video.pause()
+      setIsPlaying(false)
+      return
+    }
+
+    if (video.currentTime < startTime || video.currentTime >= selectionEnd - 0.01) {
+      video.currentTime = startTime
+      setPlayhead(startTime)
+    }
+
+    try {
+      await video.play()
+      setIsPlaying(true)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to play this source video')
+    }
+  }
+
   function seek(time: number) {
-    const bounded = clamp(time, startTime, Math.min(asset?.duration ?? 0, startTime + selectionDuration))
+    const bounded = clamp(time, startTime, selectionEnd)
     setPlayhead(bounded)
     if (videoRef.current) videoRef.current.currentTime = bounded
   }
@@ -270,6 +362,7 @@ export default function App() {
 
   function beginTimelineDrag(event: ReactPointerEvent<HTMLDivElement>) {
     if (!timelineRef.current || !asset) return
+    pausePlayback()
     event.preventDefault()
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -294,6 +387,7 @@ export default function App() {
 
   function positionSelection(event: ReactPointerEvent<HTMLDivElement>) {
     if (!timelineRef.current || !asset || asset.duration <= 0) return
+    pausePlayback()
     const bounds = timelineRef.current.getBoundingClientRect()
     const ratio = clamp((event.clientX - bounds.left) / bounds.width, 0, 1)
     const nextStart = clamp(ratio * asset.duration - selectionDuration / 2, 0, maximumStart)
@@ -308,26 +402,124 @@ export default function App() {
     setTimelineZoom(TIMELINE_ZOOM_LEVELS[nextIndex])
   }
 
-  async function handleExport() {
+  function addCurrentSelection() {
     if (!asset || !profile || !outputSize) return
+    const saved: SavedSelection = {
+      id: newSelectionId(),
+      startTime,
+      frameCount,
+      profileId: profile.id,
+      sizeIndex,
+      crop: { ...crop },
+      cropScale,
+    }
+    setSavedSelections((items) => [...items, saved])
+    setQueueNotice(`Added clip ${savedSelections.length + 1} to the session queue.`)
+  }
+
+  function removeSavedSelection(id: string) {
+    setSavedSelections((items) => items.filter((item) => item.id !== id))
+    setQueueNotice('Removed saved clip from the session queue.')
+  }
+
+  function loadSavedSelection(saved: SavedSelection) {
+    const savedProfile = profiles.find((item) => item.id === saved.profileId)
+    if (!savedProfile) return
+    const savedSize = savedProfile.sizes[saved.sizeIndex] ?? savedProfile.sizes[0]
+    const profileWillChange = saved.profileId !== profileId
+    const outputWillChange = !outputSize || outputSize.width !== savedSize.width || outputSize.height !== savedSize.height
+
+    pausePlayback()
+    if (profileWillChange) skipProfileResetRef.current = true
+    if (outputWillChange) skipCropResetRef.current = true
+    setProfileId(saved.profileId)
+    setSizeIndex(saved.sizeIndex)
+    setFrameCount(saved.frameCount)
+    setCrop({ ...saved.crop })
+    setCropScale(saved.cropScale)
+    setStartTime(saved.startTime)
+    setPlayhead(saved.startTime)
+    if (videoRef.current) videoRef.current.currentTime = saved.startTime
+    setQueueNotice('Loaded saved clip into the editor.')
+  }
+
+  function savedDuration(saved: SavedSelection): number {
+    const savedProfile = profiles.find((item) => item.id === saved.profileId)
+    return savedProfile ? saved.frameCount / savedProfile.fps : 0
+  }
+
+  async function exportSelection(saved?: SavedSelection): Promise<ExportResult> {
+    if (!asset) throw new Error('No source video is loaded')
+    const selectedProfile = saved
+      ? profiles.find((item) => item.id === saved.profileId)
+      : profile
+    if (!selectedProfile) throw new Error('Training profile is unavailable')
+    const selectedSizeIndex = saved?.sizeIndex ?? sizeIndex
+    const selectedSize = selectedProfile.sizes[selectedSizeIndex] ?? selectedProfile.sizes[0]
+    if (!selectedSize) throw new Error('Output size is unavailable')
+
+    return createExport({
+      asset,
+      profileId: selectedProfile.id,
+      mediaKind: selectedProfile.media_kind,
+      startTime: selectedProfile.media_kind === 'image' ? playhead : (saved?.startTime ?? startTime),
+      fps: selectedProfile.fps,
+      frames: saved?.frameCount ?? frameCount,
+      outputWidth: selectedSize.width,
+      outputHeight: selectedSize.height,
+      crop: saved?.crop ?? crop,
+    })
+  }
+
+  async function handleExportCurrent() {
+    if (!asset) return
+    pausePlayback()
     setBusy(true)
     setError('')
     setResult(null)
+    setQueueNotice('')
     try {
-      const exported = await createExport({
-        asset,
-        profileId: profile.id,
-        mediaKind: profile.media_kind,
-        startTime: profile.media_kind === 'image' ? playhead : startTime,
-        fps: profile.fps,
-        frames: frameCount,
-        outputWidth: outputSize.width,
-        outputHeight: outputSize.height,
-        crop,
-      })
+      const exported = await exportSelection()
       setResult(exported)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Export failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleExportSaved(saved: SavedSelection) {
+    pausePlayback()
+    setBusy(true)
+    setError('')
+    setResult(null)
+    setQueueNotice('')
+    try {
+      const exported = await exportSelection(saved)
+      setResult(exported)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Export failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleExportAll() {
+    if (!asset || savedSelections.length === 0) return
+    pausePlayback()
+    setBusy(true)
+    setError('')
+    setResult(null)
+    setQueueNotice('')
+    try {
+      let lastResult: ExportResult | null = null
+      for (const saved of savedSelections) {
+        lastResult = await exportSelection(saved)
+      }
+      if (lastResult) setResult(lastResult)
+      setQueueNotice(`Exported ${savedSelections.length} saved clip${savedSelections.length === 1 ? '' : 's'} in order.`)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Batch export failed')
     } finally {
       setBusy(false)
     }
@@ -352,6 +544,7 @@ export default function App() {
           Exported <strong>{result.filename}</strong> · <a href={result.url} target="_blank">open file</a>
         </div>
       )}
+      {queueNotice && <div className="message neutral">{queueNotice}</div>}
 
       <section className="workspace">
         <div className="editor-column">
@@ -365,7 +558,14 @@ export default function App() {
                   width: `min(100%, calc(68vh * ${asset.width / asset.height}))`,
                 }}
               >
-                <video ref={videoRef} src={asset.url} preload="metadata" playsInline />
+                <video
+                  ref={videoRef}
+                  src={asset.url}
+                  preload="metadata"
+                  playsInline
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                />
                 <div className="shade top" style={{ height: `${crop.y * 100}%` }} />
                 <div className="shade bottom" style={{ top: `${(crop.y + crop.height) * 100}%` }} />
                 <div className="shade left" style={{ top: `${crop.y * 100}%`, width: `${crop.x * 100}%`, height: `${crop.height * 100}%` }} />
@@ -400,13 +600,24 @@ export default function App() {
             <div className="timeline-heading">
               <div>
                 <span className="label">Selection</span>
-                <strong>{formatTime(startTime)} → {formatTime(Math.min(asset?.duration ?? selectionDuration, startTime + selectionDuration))}</strong>
+                <strong>{formatTime(startTime)} → {formatTime(selectionEnd)}</strong>
               </div>
               <div className="timeline-stats">
                 <span>{selectionDuration.toFixed(3)} sec</span>
                 <span>{frameCount} frame{frameCount === 1 ? '' : 's'}</span>
                 <span>{profile?.fps ?? 0} FPS</span>
               </div>
+            </div>
+
+            <div className="playback-toolbar">
+              <button type="button" className="playback-button" disabled={!asset} onClick={() => void togglePlayback()}>
+                {isPlaying ? '❚❚ Pause' : '▶ Play selection'}
+              </button>
+              <label className="loop-toggle">
+                <input type="checkbox" checked={loopSelection} disabled={!asset} onChange={(event) => setLoopSelection(event.target.checked)} />
+                Loop selection
+              </label>
+              <span className="playback-time">{formatTime(playhead)}</span>
             </div>
 
             <div className="timeline-toolbar">
@@ -431,6 +642,19 @@ export default function App() {
                   ))}
                 </div>
                 <div className="timeline-ruler" />
+                {asset && savedSelections.map((saved) => {
+                  const duration = savedDuration(saved)
+                  return (
+                    <div
+                      key={saved.id}
+                      className="saved-selection-marker"
+                      style={{
+                        left: `${saved.startTime / asset.duration * 100}%`,
+                        width: `${Math.min(100, duration / asset.duration * 100)}%`,
+                      }}
+                    />
+                  )
+                })}
                 {asset && (
                   <div
                     className="selection-window"
@@ -447,21 +671,70 @@ export default function App() {
                 )}
               </div>
             </div>
-            <p className="timeline-hint">Click the filmstrip to jump the capture window. Drag the green window to refine it; zoom in for longer sources.</p>
+            <p className="timeline-hint">Click the filmstrip to jump the capture window. Drag the green window to refine it; zoom in for longer sources. Saved clips appear as markers along the bottom.</p>
             <div className="scrub-row">
               <span>{formatTime(startTime)}</span>
               <input
                 aria-label="Scrub selected clip"
                 type="range"
                 min={startTime}
-                max={Math.max(startTime, Math.min(asset?.duration ?? selectionDuration, startTime + selectionDuration))}
+                max={Math.max(startTime, selectionEnd)}
                 step="0.001"
                 value={playhead}
                 disabled={!asset}
+                onPointerDown={pausePlayback}
                 onChange={(event) => seek(Number(event.target.value))}
               />
-              <span>{formatTime(Math.min(asset?.duration ?? selectionDuration, startTime + selectionDuration))}</span>
+              <span>{formatTime(selectionEnd)}</span>
             </div>
+          </div>
+
+          <div className="queue-card">
+            <div className="queue-heading">
+              <div>
+                <span className="label">Clip queue</span>
+                <strong>{savedSelections.length} saved selection{savedSelections.length === 1 ? '' : 's'}</strong>
+              </div>
+              <button type="button" className="queue-primary" disabled={!asset || busy} onClick={addCurrentSelection}>+ Add current selection</button>
+            </div>
+
+            {savedSelections.length === 0 ? (
+              <p className="queue-empty">Find a useful crop and time window, then add it here. Saved clips are kept for this browser session and can be exported individually or as a batch.</p>
+            ) : (
+              <div className="queue-list">
+                {savedSelections.map((saved, index) => {
+                  const savedProfile = profiles.find((item) => item.id === saved.profileId)
+                  const savedSize = savedProfile?.sizes[saved.sizeIndex]
+                  const duration = savedDuration(saved)
+                  const selectedWidth = asset ? Math.round(asset.width * saved.crop.width) : 0
+                  const selectedHeight = asset ? Math.round(asset.height * saved.crop.height) : 0
+                  return (
+                    <div className="queue-item" key={saved.id}>
+                      <div className="queue-index">{String(index + 1).padStart(2, '0')}</div>
+                      <div className="queue-details">
+                        <strong>{formatTime(saved.startTime)} → {formatTime(saved.startTime + duration)}</strong>
+                        <span>{formatDurationChoice(duration)} · {saved.frameCount} frames · {selectedWidth}×{selectedHeight} → {savedSize?.width ?? '?'}×{savedSize?.height ?? '?'}</span>
+                        <small>{savedProfile?.label ?? saved.profileId}</small>
+                      </div>
+                      <div className="queue-actions">
+                        <button type="button" disabled={busy} onClick={() => loadSavedSelection(saved)}>Load</button>
+                        <button type="button" disabled={busy} onClick={() => void handleExportSaved(saved)}>Export</button>
+                        <button type="button" className="danger-action" disabled={busy} onClick={() => removeSavedSelection(saved.id)}>Remove</button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {savedSelections.length > 0 && (
+              <div className="queue-footer">
+                <span>Batch export processes clips sequentially using each saved crop, duration, profile, and output size.</span>
+                <button type="button" className="queue-primary" disabled={busy} onClick={() => void handleExportAll()}>
+                  {busy ? 'Processing…' : `Export all ${savedSelections.length}`}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -519,7 +792,14 @@ export default function App() {
             <div className="section-number">03</div>
             <div className="control-content">
               <label htmlFor="frames">Capture duration</label>
-              <select id="frames" value={frameCount} onChange={(event) => setFrameCount(Number(event.target.value))}>
+              <select
+                id="frames"
+                value={frameCount}
+                onChange={(event) => {
+                  pausePlayback()
+                  setFrameCount(Number(event.target.value))
+                }}
+              >
                 {profile?.frame_options.map((frames) => (
                   <option key={frames} value={frames}>
                     {profile.media_kind === 'image' ? 'Single frame' : `${formatDurationChoice(frames / profile.fps)} · ${frames} frames`}
@@ -532,8 +812,8 @@ export default function App() {
             </div>
           </div>
 
-          <button className="export-button" disabled={!asset || busy} onClick={handleExport}>
-            {busy && asset ? 'Processing…' : profile?.media_kind === 'image' ? 'Export frame' : 'Export clip'}
+          <button className="export-button" disabled={!asset || busy} onClick={() => void handleExportCurrent()}>
+            {busy && asset ? 'Processing…' : profile?.media_kind === 'image' ? 'Export current frame' : 'Export current clip'}
           </button>
         </aside>
       </section>
