@@ -34,7 +34,7 @@ export default function ExportBundleBar() {
     setBusy(true)
     setError('')
     try {
-      const bundle = await createExportBundle(session.filenames, session.sourceName)
+      const bundle = await createExportBundle(session.filenames, session.projectName)
       triggerDownload(bundle.url, bundle.filename)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not create ZIP')
@@ -46,7 +46,7 @@ export default function ExportBundleBar() {
   return (
     <div className="bundle-bar" role="status">
       <div className="bundle-copy">
-        <span>Export packet</span>
+        <span>Dataset packet · {session.projectName}</span>
         <strong>{session.filenames.length} exported clip{session.filenames.length === 1 ? '' : 's'} ready</strong>
         {error && <small>{error}</small>}
       </div>
