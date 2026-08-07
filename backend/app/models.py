@@ -146,3 +146,134 @@ class ProjectWorkspace(BaseModel):
     project: Project
     sources: list[MediaAsset]
     selections: list[SavedSelection]
+
+
+CaptionStatus = Literal["uncaptioned", "new", "reviewed", "edited", "failed"]
+CaptionAssetKind = Literal["selection", "standalone"]
+CaptionSampleMode = Literal["fixed_count", "fps"]
+CaptionVisualDetail = Literal["low", "standard", "high"]
+CaptionJobStatus = Literal["queued", "running", "completed", "failed"]
+
+
+class CaptionProviderInfo(BaseModel):
+    id: str
+    label: str
+    available: bool
+    reason: str | None = None
+    default_model: str | None = None
+    model_hint: str | None = None
+
+
+class CaptionRecipeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    project_id: str | None = None
+    provider_id: str = "mock"
+    model: str = Field(default="videoz/mock-vlm", min_length=1, max_length=200)
+    prompt: str = Field(min_length=1)
+    system_prompt: str = ""
+    sample_mode: CaptionSampleMode = "fixed_count"
+    frame_count: int = Field(default=8, ge=1, le=64)
+    sample_fps: float = Field(default=2, gt=0, le=30)
+    visual_detail: CaptionVisualDetail = "standard"
+    max_tokens: int = Field(default=160, ge=16, le=4096)
+    temperature: float = Field(default=0.4, ge=0, le=2)
+    top_p: float = Field(default=0.8, gt=0, le=1)
+    seed: int | None = None
+
+
+class CaptionRecipeUpdate(CaptionRecipeCreate):
+    pass
+
+
+class CaptionRecipe(CaptionRecipeCreate):
+    id: str
+    created_at: str
+    updated_at: str
+
+
+class CaptionFrameRequest(BaseModel):
+    count: int = Field(default=8, ge=1, le=64)
+    times: list[float] | None = None
+
+
+class CaptionFrame(BaseModel):
+    index: int = Field(ge=0)
+    time: float = Field(ge=0)
+    url: str
+
+
+class CaptionAssetPatch(BaseModel):
+    caption_body: str | None = None
+    status: CaptionStatus | None = None
+    selected: bool | None = None
+    frame_times: list[float] | None = None
+
+
+class CaptionAsset(BaseModel):
+    key: str
+    project_id: str
+    kind: CaptionAssetKind
+    selection_id: str | None = None
+    sequence: int | None = None
+    display_name: str
+    url: str
+    duration: float = Field(ge=0)
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+    fps: float = Field(gt=0)
+    caption_body: str = ""
+    status: CaptionStatus = "uncaptioned"
+    selected: bool = True
+    current_recipe_id: str | None = None
+    frame_times: list[float] = Field(default_factory=list)
+    updated_at: str | None = None
+
+
+class CaptionProjectSettingsUpdate(BaseModel):
+    trigger_phrase: str = Field(default="", max_length=200)
+
+
+class CaptionProjectSettings(BaseModel):
+    project_id: str
+    trigger_phrase: str = ""
+
+
+class CaptionWorkspace(BaseModel):
+    project: Project
+    settings: CaptionProjectSettings
+    assets: list[CaptionAsset]
+    recipes: list[CaptionRecipe]
+
+
+class CaptionGenerationRequest(BaseModel):
+    project_id: str
+    asset_keys: list[str] = Field(min_length=1)
+    recipe_id: str
+
+
+class CaptionJob(BaseModel):
+    id: str
+    project_id: str
+    asset_key: str
+    recipe_id: str
+    status: CaptionJobStatus
+    progress: float = Field(default=0, ge=0, le=1)
+    error: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class CaptionGenerationResult(BaseModel):
+    jobs: list[CaptionJob]
+
+
+class CaptionVersion(BaseModel):
+    id: str
+    asset_key: str
+    recipe_id: str
+    provider_id: str
+    model: str
+    prompt: str
+    frame_times: list[float]
+    caption_body: str
+    created_at: str
