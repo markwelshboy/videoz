@@ -17,15 +17,20 @@ def _safe_bundle_stem(name: str | None) -> str:
     return cleaned[:80] or "videoz_dataset"
 
 
+def _inside(root: Path, candidate: Path) -> bool:
+    return candidate == root or root in candidate.parents
+
+
 def create_export_bundle(request: ExportBundleRequest, settings: Settings) -> ExportBundleResult:
     datasets_root = settings.datasets_dir.resolve()
     requested_media: list[Path] = []
 
     for filename in request.filenames:
-        if Path(filename).name != filename:
+        relative = Path(filename)
+        if relative.is_absolute() or ".." in relative.parts:
             raise HTTPException(status_code=422, detail=f"Invalid export filename: {filename}")
-        media_path = (settings.datasets_dir / filename).resolve()
-        if media_path.parent != datasets_root or not media_path.is_file():
+        media_path = (settings.datasets_dir / relative).resolve()
+        if not _inside(datasets_root, media_path) or not media_path.is_file():
             raise HTTPException(status_code=404, detail=f"Export was not found: {filename}")
         if media_path.suffix.lower() not in {".mp4", ".png"}:
             raise HTTPException(status_code=422, detail=f"Unsupported export file: {filename}")
@@ -44,7 +49,7 @@ def create_export_bundle(request: ExportBundleRequest, settings: Settings) -> Ex
     bundle_path = settings.datasets_dir / bundle_filename
     manifest = {
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "media_exports": [path.name for path in requested_media],
+        "media_exports": [path.relative_to(datasets_root).as_posix() for path in requested_media],
         "files": [path.name for path in included],
     }
 
