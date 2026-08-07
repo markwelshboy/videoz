@@ -20,6 +20,7 @@ Videoz is a model-aware visual editor for preparing image and video training dat
 - Session clip queue for saving multiple crops/time windows from one source.
 - Saved-selection markers on the source timeline.
 - Load, remove, individual export, and sequential batch export for queued clips.
+- Browser-downloadable ZIP export packet containing exported media, JSON sidecars, any same-stem TXT captions, and a manifest.
 - FFmpeg export from the original source.
 - Docker image that builds the React UI and serves it from FastAPI.
 
@@ -73,13 +74,14 @@ The Vite development server proxies `/api` and `/files` to FastAPI.
 - `GET /api/profiles`
 - `POST /api/media/import`
 - `POST /api/exports`
+- `POST /api/exports/bundle`
 
 Interactive API documentation is available at `/docs`.
 
 ## Planned next steps
 
 1. Persist projects and clip selections across browser/server sessions.
-2. Add direct drag-to-scrub interaction on the filmstrip.
+2. Add dataset/project naming, destination management, and resumable editing.
 3. Add asynchronous preprocessing/export jobs and progress reporting.
 4. Separate model, task/checkpoint, trainer, and resolution-tier configuration.
 5. Add scene-cut detection and dataset quality checks.
