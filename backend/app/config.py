@@ -22,9 +22,14 @@ class Settings(BaseSettings):
     def datasets_dir(self) -> Path:
         return self.data_dir / "datasets"
 
+    @property
+    def thumbnails_dir(self) -> Path:
+        return self.data_dir / "thumbnails"
+
     def ensure_directories(self) -> None:
         self.sources_dir.mkdir(parents=True, exist_ok=True)
         self.datasets_dir.mkdir(parents=True, exist_ok=True)
+        self.thumbnails_dir.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache
