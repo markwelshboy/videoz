@@ -3,6 +3,7 @@ import { createExport, fetchProfiles, importMedia } from './api'
 import type { CropRect, ExportResult, MediaAsset, OutputSize, TrainingProfile } from './types'
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+const TIMELINE_ZOOM_LEVELS = [1, 2, 4, 8, 16]
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds)) return '00:00.000'
@@ -33,10 +34,28 @@ function calculateCrop(asset: MediaAsset, size: OutputSize, scale: number): Crop
   }
 }
 
+function closestSizeIndex(profile: TrainingProfile, asset: MediaAsset): number {
+  const sourceAspect = asset.width / asset.height
+  let bestIndex = 0
+  let bestDistance = Number.POSITIVE_INFINITY
+
+  profile.sizes.forEach((size, index) => {
+    const targetAspect = size.width / size.height
+    const distance = Math.abs(Math.log(targetAspect / sourceAspect))
+    if (distance < bestDistance) {
+      bestDistance = distance
+      bestIndex = index
+    }
+  })
+
+  return bestIndex
+}
+
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
+  const timelineViewportRef = useRef<HTMLDivElement>(null)
   const [profiles, setProfiles] = useState<TrainingProfile[]>([])
   const [profileId, setProfileId] = useState('')
   const [sizeIndex, setSizeIndex] = useState(0)
@@ -46,6 +65,7 @@ export default function App() {
   const [crop, setCrop] = useState<CropRect>({ x: 0.05, y: 0.05, width: 0.9, height: 0.9 })
   const [startTime, setStartTime] = useState(0)
   const [playhead, setPlayhead] = useState(0)
+  const [timelineZoom, setTimelineZoom] = useState(1)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<ExportResult | null>(null)
@@ -63,6 +83,14 @@ export default function App() {
       height: Math.round(asset.height * crop.height),
     }
   }, [asset, crop])
+  const resizeFactor = cropPixels && outputSize ? outputSize.width / cropPixels.width : null
+  const resizeLabel = resizeFactor === null
+    ? ''
+    : resizeFactor > 1.005
+      ? `↑ ${resizeFactor.toFixed(2)}×`
+      : resizeFactor < 0.995
+        ? `↓ ${resizeFactor.toFixed(2)}×`
+        : '1.00×'
 
   useEffect(() => {
     fetchProfiles()
@@ -78,10 +106,11 @@ export default function App() {
 
   useEffect(() => {
     if (!profile) return
-    setSizeIndex(0)
+    setSizeIndex(asset ? closestSizeIndex(profile, asset) : 0)
     setFrameCount(profile.frame_options[0])
     setStartTime(0)
     setPlayhead(0)
+    setTimelineZoom(1)
   }, [profileId])
 
   useEffect(() => {
@@ -94,6 +123,21 @@ export default function App() {
     setPlayhead((current) => clamp(current, startTime, Math.min(asset?.duration ?? 0, startTime + selectionDuration)))
   }, [maximumStart, selectionDuration, startTime, asset?.duration])
 
+  useEffect(() => {
+    if (!asset || !timelineViewportRef.current || !timelineRef.current) return
+    const frame = window.requestAnimationFrame(() => {
+      const viewport = timelineViewportRef.current
+      const content = timelineRef.current
+      if (!viewport || !content || asset.duration <= 0) return
+      const centerTime = startTime + selectionDuration / 2
+      const centerRatio = clamp(centerTime / asset.duration, 0, 1)
+      const target = centerRatio * content.getBoundingClientRect().width - viewport.clientWidth / 2
+      const maxScroll = Math.max(0, content.getBoundingClientRect().width - viewport.clientWidth)
+      viewport.scrollLeft = clamp(target, 0, maxScroll)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [timelineZoom, asset?.id])
+
   async function handleFile(file: File | undefined) {
     if (!file) return
     setBusy(true)
@@ -102,8 +146,10 @@ export default function App() {
     try {
       const imported = await importMedia(file)
       setAsset(imported)
+      if (profile) setSizeIndex(closestSizeIndex(profile, imported))
       setStartTime(0)
       setPlayhead(0)
+      setTimelineZoom(1)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Import failed')
     } finally {
@@ -145,6 +191,7 @@ export default function App() {
   function beginTimelineDrag(event: ReactPointerEvent<HTMLDivElement>) {
     if (!timelineRef.current || !asset) return
     event.preventDefault()
+    event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
     const initial = startTime
     const startX = event.clientX
@@ -163,6 +210,22 @@ export default function App() {
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', stop)
+  }
+
+  function positionSelection(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!timelineRef.current || !asset || asset.duration <= 0) return
+    const bounds = timelineRef.current.getBoundingClientRect()
+    const ratio = clamp((event.clientX - bounds.left) / bounds.width, 0, 1)
+    const nextStart = clamp(ratio * asset.duration - selectionDuration / 2, 0, maximumStart)
+    setStartTime(nextStart)
+    setPlayhead(nextStart)
+    if (videoRef.current) videoRef.current.currentTime = nextStart
+  }
+
+  function adjustTimelineZoom(direction: -1 | 1) {
+    const currentIndex = TIMELINE_ZOOM_LEVELS.indexOf(timelineZoom)
+    const nextIndex = clamp(currentIndex + direction, 0, TIMELINE_ZOOM_LEVELS.length - 1)
+    setTimelineZoom(TIMELINE_ZOOM_LEVELS[nextIndex])
   }
 
   async function handleExport() {
@@ -214,7 +277,14 @@ export default function App() {
         <div className="editor-column">
           <div className="viewer-card">
             {asset ? (
-              <div className="video-stage" ref={stageRef} style={{ aspectRatio: `${asset.width} / ${asset.height}` }}>
+              <div
+                className="video-stage"
+                ref={stageRef}
+                style={{
+                  aspectRatio: `${asset.width} / ${asset.height}`,
+                  width: `min(100%, calc(68vh * ${asset.width / asset.height}))`,
+                }}
+              >
                 <video ref={videoRef} src={asset.url} preload="metadata" playsInline />
                 <div className="shade top" style={{ height: `${crop.y * 100}%` }} />
                 <div className="shade bottom" style={{ top: `${(crop.y + crop.height) * 100}%` }} />
@@ -254,23 +324,46 @@ export default function App() {
                 <span>{selectionDuration.toFixed(3)} sec</span>
               </div>
             </div>
-            <div className="timeline" ref={timelineRef}>
-              <div className="timeline-ruler" />
-              {asset && (
-                <div
-                  className="selection-window"
-                  onPointerDown={beginTimelineDrag}
-                  style={{ left: `${selectionLeft}%`, width: `${selectionWidth}%` }}
-                >
-                  <div className="selection-grip left-grip" />
-                  <div className="selection-grip right-grip" />
-                  <div
-                    className="playhead"
-                    style={{ left: `${selectionDuration ? (playhead - startTime) / selectionDuration * 100 : 0}%` }}
-                  />
-                </div>
-              )}
+
+            <div className="timeline-toolbar">
+              <span>{asset?.thumbnails.length ? `${asset.thumbnails.length} source previews` : 'Timeline preview'}</span>
+              <div className="zoom-control">
+                <button type="button" disabled={!asset || timelineZoom === TIMELINE_ZOOM_LEVELS[0]} onClick={() => adjustTimelineZoom(-1)} aria-label="Zoom timeline out">−</button>
+                <strong>{timelineZoom}×</strong>
+                <button type="button" disabled={!asset || timelineZoom === TIMELINE_ZOOM_LEVELS[TIMELINE_ZOOM_LEVELS.length - 1]} onClick={() => adjustTimelineZoom(1)} aria-label="Zoom timeline in">+</button>
+              </div>
             </div>
+
+            <div className="timeline-viewport" ref={timelineViewportRef}>
+              <div
+                className="timeline"
+                ref={timelineRef}
+                style={{ width: `${timelineZoom * 100}%` }}
+                onPointerDown={positionSelection}
+              >
+                <div className="timeline-thumbnails" aria-hidden="true">
+                  {asset?.thumbnails.map((thumbnail, index) => (
+                    <img key={`${thumbnail}-${index}`} src={thumbnail} draggable={false} alt="" />
+                  ))}
+                </div>
+                <div className="timeline-ruler" />
+                {asset && (
+                  <div
+                    className="selection-window"
+                    onPointerDown={beginTimelineDrag}
+                    style={{ left: `${selectionLeft}%`, width: `${selectionWidth}%` }}
+                  >
+                    <div className="selection-grip left-grip" />
+                    <div className="selection-grip right-grip" />
+                    <div
+                      className="playhead"
+                      style={{ left: `${selectionDuration ? (playhead - startTime) / selectionDuration * 100 : 0}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+            <p className="timeline-hint">Click the filmstrip to jump the capture window. Drag the green window to refine it; zoom in for longer sources.</p>
             <div className="scrub-row">
               <span>{formatTime(startTime)}</span>
               <input
@@ -308,15 +401,16 @@ export default function App() {
                 {profile?.sizes.map((size, index) => <option key={`${size.width}x${size.height}`} value={index}>{size.label}</option>)}
               </select>
               <div className="range-label">
-                <label htmlFor="crop-scale">Crop scale</label>
+                <label htmlFor="crop-scale">Crop size</label>
                 <span>{Math.round(cropScale * 100)}%</span>
               </div>
               <input id="crop-scale" type="range" min="0.25" max="1" step="0.01" value={cropScale} onChange={(event) => setCropScale(Number(event.target.value))} />
+              <p className="hint">100% is the largest crop at this output aspect ratio that fits the source. Lower values tighten the crop around the subject.</p>
               {cropPixels && asset && (
                 <div className="metric-grid">
-                  <span>Source crop<strong>{cropPixels.width}×{cropPixels.height}</strong></span>
-                  <span>Output<strong>{outputSize?.width}×{outputSize?.height}</strong></span>
-                  <span>Scale<strong>{((outputSize?.width ?? 1) / cropPixels.width).toFixed(2)}×</strong></span>
+                  <span>Selected pixels<strong>{cropPixels.width}×{cropPixels.height}</strong></span>
+                  <span>Export size<strong>{outputSize?.width}×{outputSize?.height}</strong></span>
+                  <span>Export resize<strong>{resizeLabel}</strong></span>
                   <span>Source<strong>{asset.width}×{asset.height}</strong></span>
                 </div>
               )}
