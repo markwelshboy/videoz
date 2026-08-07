@@ -74,3 +74,14 @@ class ExportResult(BaseModel):
     filename: str
     url: str
     command: list[str]
+
+
+class ExportBundleRequest(BaseModel):
+    filenames: list[str] = Field(min_length=1)
+    name: str | None = None
+
+
+class ExportBundleResult(BaseModel):
+    filename: str
+    url: str
+    files: list[str]
