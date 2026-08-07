@@ -300,10 +300,11 @@ class Database:
     def mark_exported(self, selection_id: str, export_filename: str) -> SavedSelection:
         current = self.get_selection(selection_id)
         timestamp = _now()
+        normalized_filename = Path(export_filename).name
         with self.connect() as db:
             db.execute(
                 "UPDATE selections SET export_filename = ?, updated_at = ? WHERE id = ?",
-                (export_filename, timestamp, selection_id),
+                (normalized_filename, timestamp, selection_id),
             )
             db.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (timestamp, current.project_id))
         return self.get_selection(selection_id)
@@ -357,7 +358,7 @@ class Database:
                 height=row["crop_height"],
             ),
             crop_scale=row["crop_scale"],
-            export_filename=row["export_filename"],
+            export_filename=Path(row["export_filename"]).name if row["export_filename"] else None,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
