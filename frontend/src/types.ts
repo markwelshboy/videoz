@@ -47,3 +47,9 @@ export interface ExportResult {
   url: string
   command: string[]
 }
+
+export interface ExportBundleResult {
+  filename: string
+  url: string
+  files: string[]
+}
