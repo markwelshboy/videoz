@@ -34,6 +34,7 @@ class MediaAsset(BaseModel):
     fps: float = Field(gt=0)
     frame_count: int | None = None
     has_audio: bool = False
+    thumbnails: list[str] = Field(default_factory=list)
 
 
 class CropRect(BaseModel):
