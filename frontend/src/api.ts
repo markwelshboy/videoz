@@ -1,4 +1,4 @@
-import type { CropRect, ExportResult, MediaAsset, MediaKind, TrainingProfile } from './types'
+import type { CropRect, ExportBundleResult, ExportResult, MediaAsset, MediaKind, TrainingProfile } from './types'
 
 async function readError(response: Response): Promise<string> {
   try {
@@ -49,6 +49,16 @@ export async function createExport(input: {
       output_height: input.outputHeight,
       crop: input.crop,
     }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
+export async function createExportBundle(filenames: string[], name?: string): Promise<ExportBundleResult> {
+  const response = await fetch('/api/exports/bundle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filenames, name }),
   })
   if (!response.ok) throw new Error(await readError(response))
   return response.json()
