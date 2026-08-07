@@ -11,6 +11,7 @@ Videoz is a model-aware visual editor for preparing image and video training dat
 - Draggable, fixed-aspect crop overlay with coarse slider sizing and fine corner handles.
 - Selected-source pixel dimensions shown directly on the crop overlay.
 - Seconds-first capture-duration selection while preserving model/trainer frame-count rules.
+- MiniMax shorter-duration choices aligned to the `17n+5` frame rule, while keeping 124 frames / 5.17 seconds as the default.
 - Fixed-frame timeline window derived from target FPS and frame count.
 - FFmpeg-generated timeline preview filmstrip.
 - 1× through 16× timeline zoom with horizontal scrolling.
