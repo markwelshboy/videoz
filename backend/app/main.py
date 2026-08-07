@@ -4,11 +4,27 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .archive import create_export_bundle
+from .captions import CaptionDatasetBundleRequest, CaptionService
 from .config import get_settings
 from .database import Database
 from .ffmpeg import export_selection
 from .media import import_media
 from .models import (
+    CaptionAsset,
+    CaptionAssetPatch,
+    CaptionFrame,
+    CaptionFrameRequest,
+    CaptionGenerationRequest,
+    CaptionGenerationResult,
+    CaptionJob,
+    CaptionProjectSettings,
+    CaptionProjectSettingsUpdate,
+    CaptionProviderInfo,
+    CaptionRecipe,
+    CaptionRecipeCreate,
+    CaptionRecipeUpdate,
+    CaptionVersion,
+    CaptionWorkspace,
     ExportBundleRequest,
     ExportBundleResult,
     ExportRequest,
@@ -28,8 +44,9 @@ from .profiles import PROFILES, PROFILE_BY_ID
 settings = get_settings()
 settings.ensure_directories()
 database = Database(settings)
+captions = CaptionService(database, settings)
 
-app = FastAPI(title="Videoz API", version="0.2.0")
+app = FastAPI(title="Videoz API", version="0.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -73,8 +90,6 @@ def update_project(project_id: str, request: ProjectUpdate) -> Project:
 
 @app.post("/api/media/import", response_model=MediaAsset)
 def upload_media(file: UploadFile = File(...)) -> MediaAsset:
-    # Retained for simple/ad-hoc use. Project-aware imports should use the
-    # /api/projects/{project_id}/media/import endpoint below.
     return import_media(file, settings)
 
 
@@ -145,6 +160,74 @@ def create_export(request: ExportRequest) -> ExportResult:
 @app.post("/api/exports/bundle", response_model=ExportBundleResult)
 def create_bundle(request: ExportBundleRequest) -> ExportBundleResult:
     return create_export_bundle(request, settings)
+
+
+# Captioning is intentionally a separate project workflow. These endpoints do
+# not assume a particular VLM implementation: providers plug into the same
+# recipe/job contract and receive the exact reviewed frames shown in the UI.
+@app.get("/api/caption/providers", response_model=list[CaptionProviderInfo])
+def list_caption_providers() -> list[CaptionProviderInfo]:
+    return captions.list_providers()
+
+
+@app.get("/api/projects/{project_id}/caption", response_model=CaptionWorkspace)
+def get_caption_workspace(project_id: str) -> CaptionWorkspace:
+    return captions.get_workspace(project_id)
+
+
+@app.get("/api/projects/{project_id}/caption/settings", response_model=CaptionProjectSettings)
+def get_caption_settings(project_id: str) -> CaptionProjectSettings:
+    return captions.get_settings(project_id)
+
+
+@app.put("/api/projects/{project_id}/caption/settings", response_model=CaptionProjectSettings)
+def update_caption_settings(project_id: str, request: CaptionProjectSettingsUpdate) -> CaptionProjectSettings:
+    return captions.update_settings(project_id, request)
+
+
+@app.post("/api/projects/{project_id}/caption/import", response_model=CaptionAsset)
+def import_caption_video(project_id: str, file: UploadFile = File(...)) -> CaptionAsset:
+    return captions.import_standalone(project_id, file)
+
+
+@app.patch("/api/caption/assets/{asset_key:path}", response_model=CaptionAsset)
+def patch_caption_asset(asset_key: str, request: CaptionAssetPatch) -> CaptionAsset:
+    return captions.patch_asset(asset_key, request)
+
+
+@app.post("/api/caption/assets/{asset_key:path}/frames", response_model=list[CaptionFrame])
+def preview_caption_frames(asset_key: str, request: CaptionFrameRequest) -> list[CaptionFrame]:
+    return captions.preview_frames(asset_key, request)
+
+
+@app.get("/api/caption/assets/{asset_key:path}/versions", response_model=list[CaptionVersion])
+def list_caption_versions(asset_key: str) -> list[CaptionVersion]:
+    return captions.list_versions(asset_key)
+
+
+@app.post("/api/caption/recipes", response_model=CaptionRecipe)
+def create_caption_recipe(request: CaptionRecipeCreate) -> CaptionRecipe:
+    return captions.create_recipe(request)
+
+
+@app.put("/api/caption/recipes/{recipe_id}", response_model=CaptionRecipe)
+def update_caption_recipe(recipe_id: str, request: CaptionRecipeUpdate) -> CaptionRecipe:
+    return captions.update_recipe(recipe_id, request)
+
+
+@app.post("/api/caption/jobs", response_model=CaptionGenerationResult)
+def create_caption_jobs(request: CaptionGenerationRequest) -> CaptionGenerationResult:
+    return captions.start_generation(request)
+
+
+@app.get("/api/caption/jobs/{job_id}", response_model=CaptionJob)
+def get_caption_job(job_id: str) -> CaptionJob:
+    return captions.get_job(job_id)
+
+
+@app.post("/api/projects/{project_id}/caption/bundle", response_model=ExportBundleResult)
+def create_caption_dataset_bundle(project_id: str, request: CaptionDatasetBundleRequest) -> ExportBundleResult:
+    return captions.create_dataset_bundle(project_id, request)
 
 
 frontend_dir = settings.frontend_dir
